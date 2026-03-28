@@ -11,7 +11,7 @@ Dokploy Custom Webhook → 钉钉机器人 的消息转发中间层。
 推送代码到 GitHub 后，GitHub Action 会自动构建镜像并推送到 GHCR。在 Dokploy 中：
 
 1. 创建新应用，选择 **Docker** 来源
-2. 镜像填 `ghcr.io/<你的用户名>/dokploy-dingtalk-webhook:main`
+2. 镜像填 `ghcr.io/<你的用户名>/dokploy-dingtalk-webhook:latest`
 3. 设置环境变量（见下方）
 4. 部署
 

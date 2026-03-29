@@ -152,6 +152,7 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("/", webhookHandler)
 	mux.HandleFunc("/webhook", webhookHandler)
 	mux.HandleFunc("/health", healthHandler)
 

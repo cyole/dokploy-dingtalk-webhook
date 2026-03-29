@@ -16,14 +16,32 @@ import (
 )
 
 type DokployPayload struct {
-	Title     string `json:"title"`
-	Message   string `json:"message"`
-	Timestamp string `json:"timestamp"`
+	Title           string  `json:"title"`
+	Message         string  `json:"message"`
+	Timestamp       string  `json:"timestamp"`
+	Date            string  `json:"date"`
+	Status          string  `json:"status"`
+	Type            string  `json:"type"`
+	ProjectName     string  `json:"projectName"`
+	ApplicationName string  `json:"applicationName"`
+	ApplicationType string  `json:"applicationType"`
+	EnvironmentName string  `json:"environmentName"`
+	BuildLink       string  `json:"buildLink"`
+	Domains         string  `json:"domains"`
+	ErrorMessage    string  `json:"errorMessage"`
+	DatabaseType    string  `json:"databaseType"`
+	DatabaseName    string  `json:"databaseName"`
+	ServerName      string  `json:"serverName"`
+	AlertType       string  `json:"alertType"`
+	CurrentValue    float64 `json:"currentValue"`
+	Threshold       float64 `json:"threshold"`
 }
 
-type DingTalkMarkdown struct {
-	MsgType  string            `json:"msgtype"`
-	Markdown map[string]string `json:"markdown"`
+type DingTalkMessage struct {
+	MsgType    string                 `json:"msgtype"`
+	ActionCard map[string]string      `json:"actionCard,omitempty"`
+	Markdown   map[string]string      `json:"markdown,omitempty"`
+	At         map[string]interface{} `json:"at,omitempty"`
 }
 
 type DingTalkResponse struct {
@@ -47,31 +65,264 @@ func dingtalkURL(accessToken, secret string) string {
 	return u
 }
 
-func buildMarkdown(p DokployPayload) DingTalkMarkdown {
+func formatTimestamp(p DokployPayload) string {
+	if p.Date != "" {
+		return p.Date
+	}
+	if p.Timestamp != "" {
+		if t, err := time.Parse(time.RFC3339Nano, p.Timestamp); err == nil {
+			loc, _ := time.LoadLocation("Asia/Shanghai")
+			return t.In(loc).Format("2006-01-02 15:04:05")
+		}
+	}
+	return ""
+}
+
+func detectNotificationType(p DokployPayload) string {
+	if p.AlertType == "server-threshold" {
+		return "server-threshold"
+	}
+	switch p.Type {
+	case "build":
+		if p.Status == "error" {
+			return "build-error"
+		}
+		return "build-success"
+	}
+	if p.DatabaseType != "" || p.DatabaseName != "" {
+		if p.Status == "error" {
+			return "database-backup-error"
+		}
+		return "database-backup-success"
+	}
+	titleLower := strings.ToLower(p.Title)
+	if strings.Contains(titleLower, "restart") {
+		return "dokploy-restart"
+	}
+	if strings.Contains(titleLower, "cleanup") || strings.Contains(titleLower, "clean up") {
+		return "docker-cleanup"
+	}
+	if strings.Contains(titleLower, "backup") && strings.Contains(titleLower, "volume") {
+		return "volume-backup"
+	}
+	return "generic"
+}
+
+func statusIcon(status string) string {
+	switch status {
+	case "success":
+		return "✅"
+	case "error":
+		return "❌"
+	case "alert":
+		return "⚠️"
+	default:
+		return "📋"
+	}
+}
+
+func buildNotificationCard(p DokployPayload) DingTalkMessage {
+	notifType := detectNotificationType(p)
+	title := p.Title
+	if title == "" {
+		title = "Dokploy 通知"
+	}
+	ts := formatTimestamp(p)
+
+	var lines []string
+
+	switch notifType {
+	case "build-success":
+		lines = buildDeployCard(p, ts, true)
+	case "build-error":
+		lines = buildDeployCard(p, ts, false)
+	case "database-backup-success":
+		lines = buildDatabaseBackupCard(p, ts, true)
+	case "database-backup-error":
+		lines = buildDatabaseBackupCard(p, ts, false)
+	case "server-threshold":
+		lines = buildServerThresholdCard(p, ts)
+	default:
+		lines = buildGenericCard(p, ts)
+	}
+
+	text := strings.Join(lines, "\n")
+
+	if p.BuildLink != "" {
+		return DingTalkMessage{
+			MsgType: "actionCard",
+			ActionCard: map[string]string{
+				"title":          title,
+				"text":           text,
+				"singleTitle":    "查看构建详情 →",
+				"singleURL":      p.BuildLink,
+				"btnOrientation": "0",
+			},
+		}
+	}
+
+	return DingTalkMessage{
+		MsgType:  "markdown",
+		Markdown: map[string]string{"title": title, "text": text},
+	}
+}
+
+func buildDeployCard(p DokployPayload, ts string, success bool) []string {
+	icon := "✅"
+	statusText := "部署成功"
+	if !success {
+		icon = "❌"
+		statusText = "构建失败"
+	}
+
+	lines := []string{fmt.Sprintf("### %s %s", icon, statusText)}
+	lines = append(lines, "", "---", "")
+
+	if p.ProjectName != "" {
+		lines = append(lines, fmt.Sprintf("**项目**: %s", p.ProjectName))
+	}
+	if p.ApplicationName != "" {
+		lines = append(lines, fmt.Sprintf("**应用**: %s", p.ApplicationName))
+	}
+	if p.ApplicationType != "" {
+		lines = append(lines, fmt.Sprintf("**类型**: %s", p.ApplicationType))
+	}
+	if p.EnvironmentName != "" {
+		lines = append(lines, fmt.Sprintf("**环境**: %s", p.EnvironmentName))
+	}
+	if p.Domains != "" {
+		lines = append(lines, fmt.Sprintf("**域名**: %s", p.Domains))
+	}
+
+	if !success && p.ErrorMessage != "" {
+		errMsg := p.ErrorMessage
+		if len(errMsg) > 500 {
+			errMsg = errMsg[:500] + "..."
+		}
+		lines = append(lines, "", "**错误信息**:", "", fmt.Sprintf("> %s", errMsg))
+	}
+
+	if p.Message != "" && p.Message != "Build completed successfully" && p.Message != "Build failed with errors" {
+		lines = append(lines, "", fmt.Sprintf("> %s", p.Message))
+	}
+
+	if ts != "" {
+		lines = append(lines, "", fmt.Sprintf("⏱ %s", ts))
+	}
+
+	return lines
+}
+
+func buildDatabaseBackupCard(p DokployPayload, ts string, success bool) []string {
+	icon := "✅"
+	statusText := "数据库备份成功"
+	if !success {
+		icon = "❌"
+		statusText = "数据库备份失败"
+	}
+
+	lines := []string{fmt.Sprintf("### %s %s", icon, statusText)}
+	lines = append(lines, "", "---", "")
+
+	if p.ProjectName != "" {
+		lines = append(lines, fmt.Sprintf("**项目**: %s", p.ProjectName))
+	}
+	if p.ApplicationName != "" {
+		lines = append(lines, fmt.Sprintf("**应用**: %s", p.ApplicationName))
+	}
+	if p.DatabaseType != "" {
+		lines = append(lines, fmt.Sprintf("**数据库类型**: %s", p.DatabaseType))
+	}
+	if p.DatabaseName != "" {
+		lines = append(lines, fmt.Sprintf("**数据库名称**: %s", p.DatabaseName))
+	}
+
+	if !success && p.ErrorMessage != "" {
+		errMsg := p.ErrorMessage
+		if len(errMsg) > 500 {
+			errMsg = errMsg[:500] + "..."
+		}
+		lines = append(lines, "", "**错误信息**:", "", fmt.Sprintf("> %s", errMsg))
+	}
+
+	if ts != "" {
+		lines = append(lines, "", fmt.Sprintf("⏱ %s", ts))
+	}
+
+	return lines
+}
+
+func buildServerThresholdCard(p DokployPayload, ts string) []string {
+	typeLabel := p.Type
+	if typeLabel == "" {
+		typeLabel = "Unknown"
+	}
+	lines := []string{fmt.Sprintf("### ⚠️ 服务器 %s 告警", typeLabel)}
+	lines = append(lines, "", "---", "")
+
+	if p.ServerName != "" {
+		lines = append(lines, fmt.Sprintf("**服务器**: %s", p.ServerName))
+	}
+	lines = append(lines, fmt.Sprintf("**告警类型**: %s", typeLabel))
+	if p.CurrentValue > 0 {
+		lines = append(lines, fmt.Sprintf("**当前值**: %.2f%%", p.CurrentValue))
+	}
+	if p.Threshold > 0 {
+		lines = append(lines, fmt.Sprintf("**阈值**: %.2f%%", p.Threshold))
+	}
+	if p.Message != "" {
+		lines = append(lines, "", fmt.Sprintf("> %s", p.Message))
+	}
+	if ts != "" {
+		lines = append(lines, "", fmt.Sprintf("⏱ %s", ts))
+	}
+
+	return lines
+}
+
+func buildGenericCard(p DokployPayload, ts string) []string {
 	title := p.Title
 	if title == "" {
 		title = "Dokploy 通知"
 	}
 
-	var lines []string
-	lines = append(lines, fmt.Sprintf("### %s", title))
-	if p.Message != "" {
-		lines = append(lines, "", p.Message)
+	icon := statusIcon(p.Status)
+	lines := []string{fmt.Sprintf("### %s %s", icon, title)}
+	lines = append(lines, "", "---", "")
+
+	if p.ProjectName != "" {
+		lines = append(lines, fmt.Sprintf("**项目**: %s", p.ProjectName))
 	}
-	if p.Timestamp != "" {
-		if t, err := time.Parse(time.RFC3339Nano, p.Timestamp); err == nil {
-			loc, _ := time.LoadLocation("Asia/Shanghai")
-			lines = append(lines, "", fmt.Sprintf("> %s", t.In(loc).Format("2006-01-02 15:04:05")))
-		}
+	if p.ApplicationName != "" {
+		lines = append(lines, fmt.Sprintf("**应用**: %s", p.ApplicationName))
+	}
+	if p.ApplicationType != "" {
+		lines = append(lines, fmt.Sprintf("**类型**: %s", p.ApplicationType))
+	}
+	if p.ServerName != "" {
+		lines = append(lines, fmt.Sprintf("**服务器**: %s", p.ServerName))
 	}
 
-	return DingTalkMarkdown{
-		MsgType:  "markdown",
-		Markdown: map[string]string{"title": title, "text": strings.Join(lines, "\n")},
+	if p.Message != "" {
+		lines = append(lines, "", fmt.Sprintf("> %s", p.Message))
 	}
+
+	if p.ErrorMessage != "" {
+		errMsg := p.ErrorMessage
+		if len(errMsg) > 500 {
+			errMsg = errMsg[:500] + "..."
+		}
+		lines = append(lines, "", "**错误信息**:", "", fmt.Sprintf("> %s", errMsg))
+	}
+
+	if ts != "" {
+		lines = append(lines, "", fmt.Sprintf("⏱ %s", ts))
+	}
+
+	return lines
 }
 
-func sendToDingTalk(accessToken, secret string, body DingTalkMarkdown) (*DingTalkResponse, error) {
+func sendToDingTalk(accessToken, secret string, body DingTalkMessage) (*DingTalkResponse, error) {
 	data, _ := json.Marshal(body)
 	resp, err := http.Post(dingtalkURL(accessToken, secret), "application/json", strings.NewReader(string(data)))
 	if err != nil {
@@ -108,8 +359,8 @@ func webhookHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	md := buildMarkdown(payload)
-	result, err := sendToDingTalk(accessToken, secret, md)
+	msg := buildNotificationCard(payload)
+	result, err := sendToDingTalk(accessToken, secret, msg)
 	if err != nil {
 		log.Printf("[DingTalk error] %v", err)
 		w.WriteHeader(http.StatusBadGateway)

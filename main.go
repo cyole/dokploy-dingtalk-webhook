@@ -31,20 +31,6 @@ type DingTalkResponse struct {
 	ErrMsg  string `json:"errmsg"`
 }
 
-var (
-	dingtalkAccessToken string
-	dingtalkSecret      string
-)
-
-func init() {
-	dingtalkAccessToken = os.Getenv("DINGTALK_ACCESS_TOKEN")
-	dingtalkSecret = os.Getenv("DINGTALK_SECRET")
-
-	if dingtalkAccessToken == "" {
-		log.Fatal("DINGTALK_ACCESS_TOKEN is required")
-	}
-}
-
 func sign(timestamp int64, secret string) string {
 	raw := fmt.Sprintf("%d\n%s", timestamp, secret)
 	mac := hmac.New(sha256.New, []byte(secret))
@@ -52,11 +38,11 @@ func sign(timestamp int64, secret string) string {
 	return url.QueryEscape(base64.StdEncoding.EncodeToString(mac.Sum(nil)))
 }
 
-func dingtalkURL() string {
-	u := fmt.Sprintf("https://oapi.dingtalk.com/robot/send?access_token=%s", dingtalkAccessToken)
-	if dingtalkSecret != "" {
+func dingtalkURL(accessToken, secret string) string {
+	u := fmt.Sprintf("https://oapi.dingtalk.com/robot/send?access_token=%s", accessToken)
+	if secret != "" {
 		ts := time.Now().UnixMilli()
-		u += fmt.Sprintf("&timestamp=%d&sign=%s", ts, sign(ts, dingtalkSecret))
+		u += fmt.Sprintf("&timestamp=%d&sign=%s", ts, sign(ts, secret))
 	}
 	return u
 }
@@ -85,9 +71,9 @@ func buildMarkdown(p DokployPayload) DingTalkMarkdown {
 	}
 }
 
-func sendToDingTalk(body DingTalkMarkdown) (*DingTalkResponse, error) {
+func sendToDingTalk(accessToken, secret string, body DingTalkMarkdown) (*DingTalkResponse, error) {
 	data, _ := json.Marshal(body)
-	resp, err := http.Post(dingtalkURL(), "application/json", strings.NewReader(string(data)))
+	resp, err := http.Post(dingtalkURL(accessToken, secret), "application/json", strings.NewReader(string(data)))
 	if err != nil {
 		return nil, err
 	}
@@ -100,10 +86,12 @@ func sendToDingTalk(body DingTalkMarkdown) (*DingTalkResponse, error) {
 }
 
 func webhookHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	accessToken := r.PathValue("access_token")
+	if accessToken == "" {
+		http.Error(w, "access_token is required", http.StatusBadRequest)
 		return
 	}
+	secret := r.URL.Query().Get("secret")
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -121,7 +109,7 @@ func webhookHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	md := buildMarkdown(payload)
-	result, err := sendToDingTalk(md)
+	result, err := sendToDingTalk(accessToken, secret, md)
 	if err != nil {
 		log.Printf("[DingTalk error] %v", err)
 		w.WriteHeader(http.StatusBadGateway)
@@ -152,7 +140,7 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/webhook", webhookHandler)
+	mux.HandleFunc("POST /webhook/{access_token}", webhookHandler)
 	mux.HandleFunc("/health", healthHandler)
 
 	addr := ":" + port

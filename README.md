@@ -26,24 +26,29 @@ Dokploy Custom Webhook → 钉钉机器人 的消息转发中间层。
 
 | 变量 | 必填 | 说明 |
 |---|---|---|
-| `DINGTALK_ACCESS_TOKEN` | 是 | 钉钉机器人 Webhook URL 中 `access_token=` 后面的值 |
-| `DINGTALK_SECRET` | 否 | 钉钉机器人的加签密钥（如使用「加签」安全方式则必填） |
 | `PORT` | 否 | 监听端口，默认 `9119` |
 
 ### 配置 Dokploy 通知
 
-部署完成后，将本服务的地址填入 Dokploy → Notifications → Custom Webhook：
+部署完成后，将本服务的地址填入 Dokploy → Notifications → Custom Webhook。
+
+`access_token` 直接作为 URL 路径参数传入，`secret`（加签密钥）作为可选 query 参数：
 
 ```
-https://your-domain.com/webhook
+https://your-domain.com/webhook/YOUR_ACCESS_TOKEN
 ```
+
+如使用加签安全方式：
+
+```
+https://your-domain.com/webhook/YOUR_ACCESS_TOKEN?secret=YOUR_SECRET
+```
+
+一个服务实例可同时为多个钉钉机器人转发通知，只需配置不同的 Webhook URL。
 
 ## 本地开发
 
 ```bash
-cp .env.example .env
-# 编辑 .env 填入钉钉机器人配置
-
 go run .
 ```
 
@@ -51,5 +56,5 @@ go run .
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| POST | `/webhook` | 接收 Dokploy 通知并转发至钉钉 |
+| POST | `/webhook/{access_token}?secret={secret}` | 接收 Dokploy 通知并转发至钉钉（secret 可选） |
 | GET | `/health` | 健康检查 |

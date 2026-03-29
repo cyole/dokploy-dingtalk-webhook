@@ -66,14 +66,14 @@ func dingtalkURL(accessToken, secret string) string {
 }
 
 func formatTimestamp(p DokployPayload) string {
-	if p.Date != "" {
-		return p.Date
-	}
+	loc, _ := time.LoadLocation("Asia/Shanghai")
 	if p.Timestamp != "" {
 		if t, err := time.Parse(time.RFC3339Nano, p.Timestamp); err == nil {
-			loc, _ := time.LoadLocation("Asia/Shanghai")
 			return t.In(loc).Format("2006-01-02 15:04:05")
 		}
+	}
+	if p.Date != "" {
+		return p.Date
 	}
 	return ""
 }
@@ -179,19 +179,16 @@ func buildDeployCard(p DokployPayload, ts string, success bool) []string {
 	lines = append(lines, "", "---", "")
 
 	if p.ProjectName != "" {
-		lines = append(lines, fmt.Sprintf("**项目**: %s", p.ProjectName))
+		lines = append(lines, fmt.Sprintf("**项目**: %s  ", p.ProjectName))
 	}
 	if p.ApplicationName != "" {
-		lines = append(lines, fmt.Sprintf("**应用**: %s", p.ApplicationName))
+		lines = append(lines, fmt.Sprintf("**应用**: %s  ", p.ApplicationName))
 	}
 	if p.ApplicationType != "" {
-		lines = append(lines, fmt.Sprintf("**类型**: %s", p.ApplicationType))
+		lines = append(lines, fmt.Sprintf("**类型**: %s  ", p.ApplicationType))
 	}
 	if p.EnvironmentName != "" {
-		lines = append(lines, fmt.Sprintf("**环境**: %s", p.EnvironmentName))
-	}
-	if p.Domains != "" {
-		lines = append(lines, fmt.Sprintf("**域名**: %s", p.Domains))
+		lines = append(lines, fmt.Sprintf("**环境**: %s  ", p.EnvironmentName))
 	}
 
 	if !success && p.ErrorMessage != "" {
@@ -225,16 +222,16 @@ func buildDatabaseBackupCard(p DokployPayload, ts string, success bool) []string
 	lines = append(lines, "", "---", "")
 
 	if p.ProjectName != "" {
-		lines = append(lines, fmt.Sprintf("**项目**: %s", p.ProjectName))
+		lines = append(lines, fmt.Sprintf("**项目**: %s  ", p.ProjectName))
 	}
 	if p.ApplicationName != "" {
-		lines = append(lines, fmt.Sprintf("**应用**: %s", p.ApplicationName))
+		lines = append(lines, fmt.Sprintf("**应用**: %s  ", p.ApplicationName))
 	}
 	if p.DatabaseType != "" {
-		lines = append(lines, fmt.Sprintf("**数据库类型**: %s", p.DatabaseType))
+		lines = append(lines, fmt.Sprintf("**数据库类型**: %s  ", p.DatabaseType))
 	}
 	if p.DatabaseName != "" {
-		lines = append(lines, fmt.Sprintf("**数据库名称**: %s", p.DatabaseName))
+		lines = append(lines, fmt.Sprintf("**数据库名称**: %s  ", p.DatabaseName))
 	}
 
 	if !success && p.ErrorMessage != "" {
@@ -261,14 +258,14 @@ func buildServerThresholdCard(p DokployPayload, ts string) []string {
 	lines = append(lines, "", "---", "")
 
 	if p.ServerName != "" {
-		lines = append(lines, fmt.Sprintf("**服务器**: %s", p.ServerName))
+		lines = append(lines, fmt.Sprintf("**服务器**: %s  ", p.ServerName))
 	}
-	lines = append(lines, fmt.Sprintf("**告警类型**: %s", typeLabel))
+	lines = append(lines, fmt.Sprintf("**告警类型**: %s  ", typeLabel))
 	if p.CurrentValue > 0 {
-		lines = append(lines, fmt.Sprintf("**当前值**: %.2f%%", p.CurrentValue))
+		lines = append(lines, fmt.Sprintf("**当前值**: %.2f%%  ", p.CurrentValue))
 	}
 	if p.Threshold > 0 {
-		lines = append(lines, fmt.Sprintf("**阈值**: %.2f%%", p.Threshold))
+		lines = append(lines, fmt.Sprintf("**阈值**: %.2f%%  ", p.Threshold))
 	}
 	if p.Message != "" {
 		lines = append(lines, "", fmt.Sprintf("> %s", p.Message))
@@ -291,16 +288,16 @@ func buildGenericCard(p DokployPayload, ts string) []string {
 	lines = append(lines, "", "---", "")
 
 	if p.ProjectName != "" {
-		lines = append(lines, fmt.Sprintf("**项目**: %s", p.ProjectName))
+		lines = append(lines, fmt.Sprintf("**项目**: %s  ", p.ProjectName))
 	}
 	if p.ApplicationName != "" {
-		lines = append(lines, fmt.Sprintf("**应用**: %s", p.ApplicationName))
+		lines = append(lines, fmt.Sprintf("**应用**: %s  ", p.ApplicationName))
 	}
 	if p.ApplicationType != "" {
-		lines = append(lines, fmt.Sprintf("**类型**: %s", p.ApplicationType))
+		lines = append(lines, fmt.Sprintf("**类型**: %s  ", p.ApplicationType))
 	}
 	if p.ServerName != "" {
-		lines = append(lines, fmt.Sprintf("**服务器**: %s", p.ServerName))
+		lines = append(lines, fmt.Sprintf("**服务器**: %s  ", p.ServerName))
 	}
 
 	if p.Message != "" {
